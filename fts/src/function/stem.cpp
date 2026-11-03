@@ -29,34 +29,6 @@ std::string getStemmerList() {
     return result;
 }
 
-struct Stem {
-    static void operation(string_t& word, string_t& stemmer, string_t& result,
-        common::ValueVector& resultVector);
-};
-
-void Stem::operation(string_t& word, string_t& stemmer, string_t& result,
-    common::ValueVector& resultVector) {
-    if (stemmer.getAsString() == "none") {
-        StringVector::addString(&resultVector, result, word);
-        return;
-    }
-
-    struct sb_stemmer* sbStemmer =
-        sb_stemmer_new(reinterpret_cast<const char*>(stemmer.getData()), "UTF_8");
-    if (sbStemmer == nullptr) {
-        throw common::RuntimeException(
-            std::format("Unrecognized stemmer '{}'. Supported stemmers are: ['{}'], or "
-                        "use 'none' for no stemming.",
-                stemmer.getAsString(), getStemmerList()));
-    }
-
-    auto stemData =
-        sb_stemmer_stem(sbStemmer, reinterpret_cast<const sb_symbol*>(word.getData()), word.len);
-    common::StringVector::addString(&resultVector, result, reinterpret_cast<const char*>(stemData),
-        sb_stemmer_length(sbStemmer));
-    sb_stemmer_delete(sbStemmer);
-}
-
 struct StemStaticStemmer {
     static void operation(string_t& word, string_t& /*stemmer*/, string_t& result,
         common::ValueVector& /*leftValueVector*/, common::ValueVector& /*rightValueVector*/,
@@ -113,32 +85,31 @@ void StemWithoutStemmer::operation(string_t& word, string_t& /*stemmer*/, string
 }
 
 static std::unique_ptr<FunctionBindData> stemBindFunc(const ScalarBindFuncInput& input) {
-    if (input.arguments[1]->expressionType == ExpressionType::LITERAL) {
-        auto value = evaluator::ExpressionEvaluatorUtils::evaluateConstantExpression(
-            input.arguments[1], input.context);
-        if (common::StringUtils::getLower(value.getValue<std::string>()) == "none") {
-            input.definition->ptrCast<ScalarFunction>()->execFunc =
-                ScalarFunction::BinaryExecWithBindData<string_t, string_t, string_t,
-                    StemWithoutStemmer>;
-        } else {
-            input.definition->ptrCast<ScalarFunction>()->execFunc =
-                ScalarFunction::BinaryExecWithBindData<string_t, string_t, string_t,
-                    StemStaticStemmer>;
-        }
-        auto patternInStr = value.getValue<std::string>();
-        return std::make_unique<StemBindData>(binder::ExpressionUtil::getDataTypes(input.arguments),
-            patternInStr);
-    } else {
-        return FunctionBindData::getSimpleBindData(input.arguments, LogicalType::BOOL());
+    // The stemmer is created once, when the function is bound, so it has to be known then.
+    if (input.arguments[1]->expressionType != ExpressionType::LITERAL) {
+        throw BinderException{"The stemmer parameter must be a literal expression."};
     }
+    auto value = evaluator::ExpressionEvaluatorUtils::evaluateConstantExpression(input.arguments[1],
+        input.context);
+    if (common::StringUtils::getLower(value.getValue<std::string>()) == "none") {
+        input.definition->ptrCast<ScalarFunction>()->execFunc =
+            ScalarFunction::BinaryExecWithBindData<string_t, string_t, string_t,
+                StemWithoutStemmer>;
+    } else {
+        input.definition->ptrCast<ScalarFunction>()->execFunc =
+            ScalarFunction::BinaryExecWithBindData<string_t, string_t, string_t, StemStaticStemmer>;
+    }
+    auto patternInStr = value.getValue<std::string>();
+    return std::make_unique<StemBindData>(binder::ExpressionUtil::getDataTypes(input.arguments),
+        patternInStr);
 }
 
 function::function_set StemFunction::getFunctionSet() {
     function_set result;
+    // The bind function picks the execution function.
     auto scalarFunction = std::make_unique<ScalarFunction>(name,
         std::vector<LogicalTypeID>{LogicalTypeID::STRING, LogicalTypeID::STRING},
-        LogicalTypeID::STRING,
-        ScalarFunction::BinaryStringExecFunction<string_t, string_t, string_t, Stem>);
+        LogicalTypeID::STRING);
     scalarFunction->bindFunc = stemBindFunc;
     result.push_back(std::move(scalarFunction));
     return result;
