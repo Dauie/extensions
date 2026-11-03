@@ -70,6 +70,13 @@ public:
                                              "table doc but its extension is not loaded.");
     }
 
+    std::vector<std::string> search(const std::string& words) {
+        auto result = conn->query("CALL QUERY_FTS_INDEX('doc', 'docIdx', '" + words +
+                                  "') RETURN node.id ORDER BY node.id");
+        EXPECT_TRUE(result->isSuccess()) << result->getErrorMessage();
+        return TestHelper::convertResultToString(*result);
+    }
+
     void expectRebuildFindsEveryDocument() {
         ASSERT_TRUE(conn->query("CALL DROP_FTS_INDEX('doc', 'docIdx')")->isSuccess());
         ASSERT_TRUE(conn->query("CALL CREATE_FTS_INDEX('doc', 'docIdx', ['text'])")->isSuccess());
@@ -129,6 +136,28 @@ TEST_F(FTSRecoveryTest, IndexBuiltByAnotherAnalysisVersionMustBeRebuilt) {
     createDBAndConn();
     expectIndexNeedsRebuild();
     expectRebuildFindsEveryDocument();
+}
+
+// The index doesn't log its own writes: replaying the table's writes repeats them, so later
+// deletes still find the terms they expect.
+TEST_F(FTSRecoveryTest, ReplayRepeatsTheIndexWrites) {
+    if (inMemMode) {
+        GTEST_SKIP();
+    }
+    createDocs();
+    ASSERT_TRUE(conn->query("CALL CREATE_FTS_INDEX('doc', 'docIdx', ['text'])")->isSuccess());
+    ASSERT_TRUE(conn->query("CALL force_checkpoint_on_close=false")->isSuccess());
+    ASSERT_TRUE(conn->query("CREATE (:doc {id: 3, text: 'carol runs'})")->isSuccess());
+    ASSERT_TRUE(conn->query("MATCH (d:doc {id: 1}) SET d.text = 'alice sleeps'")->isSuccess());
+    ASSERT_TRUE(conn->query("MATCH (d:doc {id: 2}) DELETE d")->isSuccess());
+    createDBAndConn();
+
+    EXPECT_EQ(search("runs"), std::vector<std::string>{"3"});
+    EXPECT_EQ(search("sleeps"), std::vector<std::string>{"1"});
+    EXPECT_EQ(search("walks"), std::vector<std::string>{});
+    auto deleted = conn->query("MATCH (d:doc) DELETE d");
+    ASSERT_TRUE(deleted->isSuccess()) << deleted->getErrorMessage();
+    EXPECT_EQ(search("runs sleeps"), std::vector<std::string>{});
 }
 
 #ifndef LBUG_FTS_JIEBA
