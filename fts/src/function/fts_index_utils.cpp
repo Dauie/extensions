@@ -2,6 +2,7 @@
 
 #include "binder/binder.h"
 #include "catalog/catalog.h"
+#include "catalog/catalog_entry/index_catalog_entry.h"
 #include "catalog/catalog_entry/node_table_catalog_entry.h"
 #include "common/exception/binder.h"
 #include "transaction/transaction_context.h"
@@ -24,10 +25,19 @@ void FTSIndexUtils::validateIndexExistence(const main::ClientContext& context,
     } break;
     case IndexOperation::DROP:
     case IndexOperation::QUERY: {
-        if (!catalog->containsIndex(transaction::Transaction::Get(context),
-                tableEntry->getTableID(), indexName)) {
+        auto transaction = transaction::Transaction::Get(context);
+        if (!catalog->containsIndex(transaction, tableEntry->getTableID(), indexName)) {
             throw common::BinderException{std::format(
                 "Table {} doesn't have an index with name {}.", tableEntry->getName(), indexName)};
+        }
+        // With the extension loaded, an index is unloaded because the extension couldn't use it
+        // at open (see initFTSEntries), or because WAL replay restored it after the extension
+        // loaded. Either way, dropping it is how to recover.
+        if (indexOperation == IndexOperation::QUERY &&
+            !catalog->getIndex(transaction, tableEntry->getTableID(), indexName)->isLoaded()) {
+            throw common::BinderException{std::format(
+                "Index {} on table {} needs to be rebuilt. Drop it and create it again.", indexName,
+                tableEntry->getName())};
         }
     } break;
     default: {
