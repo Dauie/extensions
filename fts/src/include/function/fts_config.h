@@ -59,13 +59,27 @@ struct Tokenizer {
     static constexpr const char* NAME = "tokenizer";
     static constexpr common::LogicalTypeID TYPE = common::LogicalTypeID::STRING;
     static constexpr const char* DEFAULT_VALUE = "simple";
+#ifdef LBUG_FTS_JIEBA
+    static constexpr const char* SUPPORTED = "'simple' (default), 'jieba' (advanced Chinese)";
+#else
+    static constexpr const char* SUPPORTED = "'simple' (default)";
+#endif
+    static constexpr const char* NO_JIEBA = "This build has no jieba tokenizer.";
 
     static void validate(const std::string& tokenizer);
+    // Throws if this build has no jieba tokenizer (see FTS_JIEBA).
+    static void requireJieba();
+    // Whether this build can tokenize as an index built with `tokenizer` does.
+    static bool isBuilt(const std::string& tokenizer);
 };
 
 struct TokenizerInfo {
     std::string tokenizer = Tokenizer::DEFAULT_VALUE;
+#ifdef LBUG_FTS_JIEBA
     std::string jiebaDictDir = std::format("{}/extension/fts/build/dict", LBUG_ROOT_DIRECTORY);
+#else
+    std::string jiebaDictDir;
+#endif
 
     TokenizerInfo() = default;
 };

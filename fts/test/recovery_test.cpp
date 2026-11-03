@@ -131,5 +131,32 @@ TEST_F(FTSRecoveryTest, IndexBuiltByAnotherAnalysisVersionMustBeRebuilt) {
     expectRebuildFindsEveryDocument();
 }
 
+#ifndef LBUG_FTS_JIEBA
+// A build without jieba can't maintain an index another build made with it.
+TEST_F(FTSRecoveryTest, JiebaIndexMustBeRebuiltWithoutJieba) {
+    if (inMemMode) {
+        GTEST_SKIP();
+    }
+    createDocs();
+    ASSERT_TRUE(conn->query("CREATE (:doc {id: 3, text: 'carol runs'})")->isSuccess());
+    ASSERT_TRUE(conn->query("CALL CREATE_FTS_INDEX('doc', 'docIdx', ['text'])")->isSuccess());
+    // Stand in for an index written by a build with jieba.
+    ASSERT_TRUE(conn->query("BEGIN TRANSACTION READ ONLY")->isSuccess());
+    auto catalog = database->getCatalog();
+    auto transaction = getActiveTransaction(*conn);
+    auto tableID = catalog->getTableCatalogEntry(transaction, "doc")->getTableID();
+    catalog->getIndex(transaction, tableID, "docIdx")
+        ->getAuxInfoUnsafe()
+        .cast<fts_extension::FTSIndexAuxInfo>()
+        .config.tokenizer = "jieba";
+    ASSERT_TRUE(conn->query("COMMIT")->isSuccess());
+    ASSERT_TRUE(conn->query("CREATE NODE TABLE marker(id INT64, PRIMARY KEY(id))")->isSuccess());
+    ASSERT_TRUE(conn->query("CHECKPOINT")->isSuccess());
+    createDBAndConn();
+    expectIndexNeedsRebuild();
+    expectRebuildFindsEveryDocument();
+}
+#endif
+
 } // namespace testing
 } // namespace lbug

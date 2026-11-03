@@ -9,8 +9,11 @@
 
 #include "catalog/catalog.h"
 #include "common/exception/binder.h"
+#include "common/exception/runtime.h"
 #include "common/string_utils.h"
+#ifdef LBUG_FTS_JIEBA
 #include "cppjieba/Jieba.hpp"
+#endif
 #include "function/stem.h"
 #include "libstemmer.h"
 #include "re2.h"
@@ -154,6 +157,7 @@ std::vector<std::string> FTSUtils::stemTerms(std::vector<std::string> terms,
     return result;
 }
 
+#ifdef LBUG_FTS_JIEBA
 std::shared_ptr<const cppjieba::Jieba> FTSUtils::getCachedJieba(const std::string& dictDir) {
     auto key = dictDir;
     while (key.size() > 1 && key.back() == '/') {
@@ -197,10 +201,15 @@ std::shared_ptr<const cppjieba::Jieba> FTSUtils::getCachedJieba(const std::strin
     cache[key] = jieba;
     return jieba;
 }
+#endif
 
 std::vector<std::string> FTSUtils::tokenizeString(std::string& str, const FTSConfig& config) {
     std::vector<std::string> terms;
     if (config.tokenizer == "jieba") {
+#ifndef LBUG_FTS_JIEBA
+        // Only an index built by a build with jieba gets here.
+        throw RuntimeException{Tokenizer::NO_JIEBA};
+#else
         auto jieba = getCachedJieba(config.jiebaDictDir);
         jieba->CutForSearch(str, terms);
         // CutForSearch keeps the whitespace between words as separate tokens. Whitespace is
@@ -209,6 +218,7 @@ std::vector<std::string> FTSUtils::tokenizeString(std::string& str, const FTSCon
             return std::all_of(term.begin(), term.end(),
                 [](unsigned char c) { return std::isspace(c); });
         });
+#endif
     } else {
         terms = StringUtils::split(str, " ", true /* ignoreEmptyStringParts */);
     }

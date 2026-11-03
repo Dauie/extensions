@@ -47,6 +47,11 @@ static bool isUsable(main::ClientContext* context, const catalog::IndexCatalogEn
     if (config.analysisVersion != FTSConfig::ANALYSIS_VERSION) {
         return false;
     }
+    // An index whose tokenizer this build leaves out couldn't be maintained: replaying or
+    // making a write would fail.
+    if (!Tokenizer::isBuilt(config.tokenizer)) {
+        return false;
+    }
     return ftsInternalTablesComplete(context, indexEntry.getTableID(), indexEntry.getIndexName(),
         config.stopWordsTableName);
 }

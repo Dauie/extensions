@@ -155,6 +155,7 @@ CreateFTSConfig::CreateFTSConfig(main::ClientContext& context, common::table_id_
             tokenizerInfo.tokenizer = common::StringUtils::getLower(value.getValue<std::string>());
             Tokenizer::validate(tokenizerInfo.tokenizer);
         } else if (lowerCaseName == "jieba_dict_dir") {
+            Tokenizer::requireJieba();
             value.validateType(common::LogicalTypeID::STRING);
             // NOTE: dictionary paths are case-sensitive on some filesystems, so the
             // value must be used verbatim (only the parameter *name* is lowercased).
@@ -221,12 +222,29 @@ void TopK::validate(uint64_t value) {
 }
 
 void Tokenizer::validate(const std::string& tokenizer) {
-    if (tokenizer == "simple" || tokenizer == "jieba") {
+    if (tokenizer == "simple") {
+        return;
+    }
+    if (tokenizer == "jieba") {
+        requireJieba();
         return;
     }
     throw common::BinderException{
-        "Unsupported tokenizer: " + tokenizer +
-        ".\nSupported tokenizers: 'simple' (default), 'jieba' (advanced Chinese)"};
+        std::format("Unsupported tokenizer: {}.\nSupported tokenizers: {}", tokenizer, SUPPORTED)};
+}
+
+void Tokenizer::requireJieba() {
+#ifndef LBUG_FTS_JIEBA
+    throw common::BinderException{NO_JIEBA};
+#endif
+}
+
+bool Tokenizer::isBuilt([[maybe_unused]] const std::string& tokenizer) {
+#ifdef LBUG_FTS_JIEBA
+    return true;
+#else
+    return tokenizer != "jieba";
+#endif
 }
 
 } // namespace fts_extension

@@ -8,9 +8,11 @@
 #include "main/client_context.h"
 #include <format>
 
+#ifdef LBUG_FTS_JIEBA
 namespace cppjieba {
 class Jieba;
 } // namespace cppjieba
+#endif
 
 namespace lbug {
 namespace storage {
@@ -77,12 +79,14 @@ struct FTSUtils {
     static std::string dropTokenizeMacroQuery(const main::ClientContext& context,
         common::table_id_t tableID, const std::string& indexName);
 
+#ifdef LBUG_FTS_JIEBA
     // Returns a process-wide cached jieba instance for the given dictionary directory.
     // The first call for a directory loads the dictionaries (~0.5s); subsequent calls
     // reuse the instance. The returned instance is const and safe for concurrent use by
     // multiple queries (jieba's Cut* methods are const; FTS never calls mutators).
     // An empty dictDir resolves to the default dictionary directory.
     static std::shared_ptr<const cppjieba::Jieba> getCachedJieba(const std::string& dictDir);
+#endif
 };
 
 } // namespace fts_extension

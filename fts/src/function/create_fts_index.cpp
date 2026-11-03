@@ -350,10 +350,13 @@ std::string createFTSIndexQuery(ClientContext& context, const TableFuncBindData&
         FTSUtils::escapeCypherString(ftsBindData->createFTSConfig.stopWordsTableInfo.stopWords));
     params += std::format("ignore_pattern := '{}', ",
         FTSUtils::escapeCypherString(ftsBindData->createFTSConfig.ignorePattern));
-    params += std::format("tokenizer := '{}', ",
+    params += std::format("tokenizer := '{}'",
         FTSUtils::escapeCypherString(ftsBindData->createFTSConfig.tokenizerInfo.tokenizer));
-    params += std::format("jieba_dict_dir := '{}'",
-        FTSUtils::escapeCypherString(ftsBindData->createFTSConfig.tokenizerInfo.jiebaDictDir));
+    // A build without jieba has no dictionary directory, and refuses the option.
+    if (!ftsBindData->createFTSConfig.tokenizerInfo.jiebaDictDir.empty()) {
+        params += std::format(", jieba_dict_dir := '{}'",
+            FTSUtils::escapeCypherString(ftsBindData->createFTSConfig.tokenizerInfo.jiebaDictDir));
+    }
     query += std::format("CALL _CREATE_FTS_INDEX('{}', '{}', {}, {});",
         FTSUtils::escapeCypherString(tableName), FTSUtils::escapeCypherString(indexName),
         properties, params);
