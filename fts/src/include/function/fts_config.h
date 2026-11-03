@@ -21,6 +21,7 @@ enum class StopWordsSource : uint8_t {
     FILE = 0,
     TABLE = 1,
     DEFAULT = 2,
+    NONE = 3,
 };
 
 struct StopWordsTableInfo {
@@ -37,6 +38,8 @@ struct StopWords {
     static constexpr const char* NAME = "stopwords";
     static constexpr common::LogicalTypeID TYPE = common::LogicalTypeID::STRING;
     static constexpr const char* DEFAULT_VALUE = "default";
+    // Keeps every word. It takes precedence over a node table of the same name.
+    static constexpr const char* NONE_VALUE = "none";
     static const std::unordered_set<std::string>& getDefaultStopWords();
     static constexpr uint64_t NUM_DEFAULT_STOP_WORDS = 570;
 

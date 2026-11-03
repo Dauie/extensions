@@ -231,6 +231,11 @@ static std::string createStopWordsTable([[maybe_unused]] const ClientContext& co
         query += std::format("COPY {} FROM '{}';", StringUtils::quoteIdentifier(info.tableName),
             FTSUtils::escapeCypherString(info.stopWords));
     } break;
+    case StopWordsSource::NONE: {
+        // An empty per-index table, so that indexing and maintenance find no stopwords.
+        query += std::format("CREATE NODE TABLE {} (sw STRING, PRIMARY KEY(sw));",
+            StringUtils::quoteIdentifier(info.tableName));
+    } break;
     default:
         UNREACHABLE_CODE;
     }

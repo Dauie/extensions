@@ -128,3 +128,27 @@ Binder exception: Given stopwords: 'S3://lbug-test/test123' is not a node table 
 2
 -STATEMENT CALL QUERY_FTS_INDEX('source_doc', 'contentIdx', 'go') RETURN node.ID;
 ---- 0
+
+# 'none' keeps every word, default stopwords included, at creation and afterwards.
+-CASE NoStopWords
+-LOAD_DYNAMIC_EXTENSION fts
+-STATEMENT CREATE NODE TABLE note(id INT64, text STRING, PRIMARY KEY(id))
+---- ok
+-STATEMENT CREATE (:note {id: 1, text: 'the first note'})
+---- ok
+-STATEMENT CALL CREATE_FTS_INDEX('note', 'noteIdx', ['text'], stemmer := 'none', stopWords := 'none')
+---- ok
+-STATEMENT CREATE (:note {id: 2, text: 'the second note'})
+---- ok
+-STATEMENT CALL QUERY_FTS_INDEX('note', 'noteIdx', 'the') RETURN node.id ORDER BY node.id
+---- 2
+1
+2
+-STATEMENT CALL QUERY_FTS_INDEX('note', 'noteIdx', 'first') RETURN node.id
+---- 1
+1
+-STATEMENT CALL SHOW_INDEXES() WHERE index_name = 'noteIdx' RETURN index_definition
+---- 1
+CALL CREATE_FTS_INDEX('note', 'noteIdx', ['text'], stemmer := 'none', stopWords := 'none');
+-STATEMENT CALL DROP_FTS_INDEX('note', 'noteIdx')
+---- ok

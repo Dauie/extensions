@@ -105,6 +105,9 @@ StopWordsTableInfo StopWords::bind(main::ClientContext& context, common::table_i
     if (stopWords == DEFAULT_VALUE) {
         return StopWordsTableInfo{stopWords, FTSUtils::getDefaultStopWordsTableName(),
             StopWordsSource::DEFAULT};
+    } else if (stopWords == NONE_VALUE) {
+        return StopWordsTableInfo{stopWords,
+            FTSUtils::getNonDefaultStopWordsTableName(tableID, indexName), StopWordsSource::NONE};
     } else if (catalog->containsTable(transaction::Transaction::Get(context), stopWords)) {
         auto entry =
             catalog->getTableCatalogEntry(transaction::Transaction::Get(context), stopWords);

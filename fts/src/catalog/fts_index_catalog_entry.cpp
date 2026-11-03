@@ -26,6 +26,9 @@ std::unique_ptr<FTSIndexAuxInfo> FTSIndexAuxInfo::deserialize(
 }
 
 std::string FTSIndexAuxInfo::getStopWordsName(const common::FileScanInfo& exportFileInfo) const {
+    if (config.stopWordsSource == StopWords::NONE_VALUE) {
+        return StopWords::NONE_VALUE;
+    }
     std::string stopWordsName = "default";
     switch (exportFileInfo.fileTypeInfo.fileType) {
     case common::FileType::UNKNOWN: {
@@ -49,7 +52,8 @@ std::string FTSIndexAuxInfo::getStopWordsName(const common::FileScanInfo& export
 // exported as regular node tables in schema.cypher, so index.cypher can reference them by
 // name instead of the legacy per-index parquet file.
 static bool stopWordsIsTable(const FTSConfig& config, const main::ClientContext* context) {
-    if (config.stopWordsTableName == FTSUtils::getDefaultStopWordsTableName()) {
+    if (config.stopWordsTableName == FTSUtils::getDefaultStopWordsTableName() ||
+        config.stopWordsSource == StopWords::NONE_VALUE) {
         return false;
     }
     auto catalog = catalog::Catalog::Get(*context);
@@ -102,7 +106,9 @@ std::string FTSIndexAuxInfo::toCypher(const catalog::IndexCatalogEntry& indexEnt
 
 catalog::TableCatalogEntry* FTSIndexAuxInfo::getTableEntryToExport(
     const main::ClientContext* context) const {
-    if (config.stopWordsTableName == FTSUtils::getDefaultStopWordsTableName()) {
+    // The index recreates its empty table when it's imported.
+    if (config.stopWordsTableName == FTSUtils::getDefaultStopWordsTableName() ||
+        config.stopWordsSource == StopWords::NONE_VALUE) {
         return nullptr;
     }
     auto transaction = transaction::Transaction::Get(*context);
