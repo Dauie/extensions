@@ -69,7 +69,7 @@ FTSDeleteState::FTSDeleteState(MemoryManager* mm, const Transaction* transaction
           updateVectors.idVector},
       indexTableState{mm, transaction, tableInfo, std::move(columnIDs), updateVectors.idVector,
           updateVectors.dataChunkState} {
-    docTableScanState.setToTable(transaction, tableInfo.docTable, {tableInfo.dfColumnID}, {});
+    docTableScanState.setToTable(transaction, tableInfo.docTable, {tableInfo.docLenColumnID}, {});
     docTableDeleteState.logToWAL = false;
     termsTableDeleteState.logToWAL = false;
     appearsInTableDeleteState.logToWAL = false;
