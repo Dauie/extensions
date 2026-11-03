@@ -87,6 +87,13 @@ struct CreateFTSConfig {
 };
 
 struct FTSConfig {
+    // The version of the analysis that turns text into terms: tokenizing, applying the ignore
+    // pattern, lower-casing, removing stopwords and stemming. Change it whenever any of those
+    // changes, including an engine update that changes case mapping. An index keeps the terms
+    // the old analysis produced, so its documents could no longer be found to delete or update;
+    // the extension leaves an index of another version unloaded until it's created again.
+    static constexpr uint64_t ANALYSIS_VERSION = 1;
+
     std::string stemmer = "";
     std::string stopWordsTableName = "";
     // The original stopwords that the user used when creating the index. This field is only
@@ -96,15 +103,18 @@ struct FTSConfig {
     std::string ignorePatternQuery = "";
     std::string tokenizer = "";
     std::string jiebaDictDir = "";
+    // The analysis version the index was built with. Indexes built before it was stored read
+    // as 0.
+    uint64_t analysisVersion = 0;
 
     FTSConfig() = default;
     FTSConfig(std::string stemmer, std::string stopWordsTableName, std::string stopWordsSource,
         std::string ignorePattern, std::string ignorePatternQuery, std::string tokenizer,
-        std::string jiebaDictDir)
+        std::string jiebaDictDir, uint64_t analysisVersion)
         : stemmer{std::move(stemmer)}, stopWordsTableName{std::move(stopWordsTableName)},
           stopWordsSource{std::move(stopWordsSource)}, ignorePattern{std::move(ignorePattern)},
           ignorePatternQuery{std::move(ignorePatternQuery)}, tokenizer{std::move(tokenizer)},
-          jiebaDictDir{std::move(jiebaDictDir)} {}
+          jiebaDictDir{std::move(jiebaDictDir)}, analysisVersion{analysisVersion} {}
 
     void serialize(common::Serializer& serializer) const;
 

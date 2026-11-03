@@ -1,11 +1,14 @@
+#include "catalog/catalog.h"
+#include "catalog/fts_index_catalog_entry.h"
+#include "function/fts_config.h"
 #include "graph_test/private_graph_test.h"
 #include "main/connection.h"
+#include "transaction/transaction.h"
 
 namespace lbug {
 namespace testing {
 
-// CREATE_FTS_INDEX commits and then forces a checkpoint. A crash between the two leaves the
-// index's catalog entry in the WAL, and replay restores the entry but not the index.
+// Indexes the extension can't use when the database opens, and how they're rebuilt.
 class FTSRecoveryTest : public DBTest {
 public:
     void SetUp() override {
@@ -20,13 +23,19 @@ public:
 
     std::string getInputDir() override { UNREACHABLE_CODE; }
 
-    void createIndexThenCrashBeforeItsCheckpoint() {
+    void createDocs() {
         ASSERT_TRUE(conn->query("CREATE NODE TABLE doc(id INT64, text STRING, PRIMARY KEY(id))")
                 ->isSuccess());
         ASSERT_TRUE(
             conn->query("CREATE (:doc {id: 1, text: 'alice runs'}), "
                         "(:doc {id: 2, text: 'bob walks'})")
                 ->isSuccess());
+    }
+
+    // CREATE_FTS_INDEX commits and then forces a checkpoint. A crash between the two leaves the
+    // index's catalog entry in the WAL, and replay restores the entry but not the index.
+    void createIndexThenCrashBeforeItsCheckpoint() {
+        createDocs();
         ASSERT_TRUE(conn->query("CREATE NODE TABLE other(id INT64, PRIMARY KEY(id))")->isSuccess());
         auto writer = std::make_unique<main::Connection>(database.get());
         ASSERT_TRUE(writer->query("BEGIN TRANSACTION")->isSuccess());
@@ -89,6 +98,33 @@ TEST_F(FTSRecoveryTest, IndexLostByACrashCanBeRebuiltAfterACheckpoint) {
         GTEST_SKIP();
     }
     createIndexThenCrashBeforeItsCheckpoint();
+    ASSERT_TRUE(conn->query("CHECKPOINT")->isSuccess());
+    createDBAndConn();
+    expectIndexNeedsRebuild();
+    expectRebuildFindsEveryDocument();
+}
+
+// An index built by another version of the analysis holds terms this build wouldn't produce, so
+// deleting or updating its documents would fail.
+TEST_F(FTSRecoveryTest, IndexBuiltByAnotherAnalysisVersionMustBeRebuilt) {
+    if (inMemMode) {
+        GTEST_SKIP();
+    }
+    createDocs();
+    ASSERT_TRUE(conn->query("CREATE (:doc {id: 3, text: 'carol runs'})")->isSuccess());
+    ASSERT_TRUE(conn->query("CALL CREATE_FTS_INDEX('doc', 'docIdx', ['text'])")->isSuccess());
+    // Stand in for an index written by another build: change the version this one stores.
+    ASSERT_TRUE(conn->query("BEGIN TRANSACTION READ ONLY")->isSuccess());
+    auto catalog = database->getCatalog();
+    auto transaction = getActiveTransaction(*conn);
+    auto tableID = catalog->getTableCatalogEntry(transaction, "doc")->getTableID();
+    catalog->getIndex(transaction, tableID, "docIdx")
+        ->getAuxInfoUnsafe()
+        .cast<fts_extension::FTSIndexAuxInfo>()
+        .config.analysisVersion = fts_extension::FTSConfig::ANALYSIS_VERSION + 1;
+    ASSERT_TRUE(conn->query("COMMIT")->isSuccess());
+    // A catalog change makes the checkpoint write the catalog, that entry included.
+    ASSERT_TRUE(conn->query("CREATE NODE TABLE marker(id INT64, PRIMARY KEY(id))")->isSuccess());
     ASSERT_TRUE(conn->query("CHECKPOINT")->isSuccess());
     createDBAndConn();
     expectIndexNeedsRebuild();

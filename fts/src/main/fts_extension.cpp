@@ -42,6 +42,11 @@ static bool isUsable(main::ClientContext* context, const catalog::IndexCatalogEn
     if (!hasIndex) {
         return false;
     }
+    // An index built by another version of the analysis holds terms this build wouldn't
+    // produce, so deleting or updating its documents would fail.
+    if (config.analysisVersion != FTSConfig::ANALYSIS_VERSION) {
+        return false;
+    }
     return ftsInternalTablesComplete(context, indexEntry.getTableID(), indexEntry.getIndexName(),
         config.stopWordsTableName);
 }

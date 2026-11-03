@@ -167,7 +167,8 @@ CreateFTSConfig::CreateFTSConfig(main::ClientContext& context, common::table_id_
 
 FTSConfig CreateFTSConfig::getFTSConfig() const {
     return FTSConfig{stemmer, stopWordsTableInfo.tableName, stopWordsTableInfo.stopWords,
-        ignorePattern, ignorePatternQuery, tokenizerInfo.tokenizer, tokenizerInfo.jiebaDictDir};
+        ignorePattern, ignorePatternQuery, tokenizerInfo.tokenizer, tokenizerInfo.jiebaDictDir,
+        FTSConfig::ANALYSIS_VERSION};
 }
 
 void FTSConfig::serialize(common::Serializer& serializer) const {
@@ -178,6 +179,7 @@ void FTSConfig::serialize(common::Serializer& serializer) const {
     serializer.serializeValue(ignorePatternQuery);
     serializer.serializeValue(tokenizer);
     serializer.serializeValue(jiebaDictDir);
+    serializer.serializeValue(analysisVersion);
 }
 
 FTSConfig FTSConfig::deserialize(common::Deserializer& deserializer) {
@@ -189,6 +191,10 @@ FTSConfig FTSConfig::deserialize(common::Deserializer& deserializer) {
     deserializer.deserializeValue(config.ignorePatternQuery);
     deserializer.deserializeValue(config.tokenizer);
     deserializer.deserializeValue(config.jiebaDictDir);
+    // The version comes last, so an index stored without one ends here.
+    if (!deserializer.finished()) {
+        deserializer.deserializeValue(config.analysisVersion);
+    }
     return config;
 }
 
