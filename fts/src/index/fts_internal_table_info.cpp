@@ -1,6 +1,7 @@
 #include "index/fts_internal_table_info.h"
 
 #include "catalog/catalog.h"
+#include "function/create_fts_index.h"
 #include "storage/storage_manager.h"
 #include "utils/fts_utils.h"
 
@@ -35,6 +36,8 @@ FTSInternalTableInfo::FTSInternalTableInfo(main::ClientContext* context, common:
     appearsInfoTable =
         storageManager->getTable(appearsInTableEntry->oid)->ptrCast<storage::RelTable>();
     dfColumnID = catalog->getTableCatalogEntry(transaction, termsTableName)->getColumnID("df");
+    docLenColumnID = catalog->getTableCatalogEntry(transaction, docTableName)
+                         ->getColumnID(InternalCreateFTSFunction::DOC_LEN_PROP_NAME);
 }
 
 } // namespace fts_extension

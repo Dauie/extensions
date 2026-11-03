@@ -57,8 +57,12 @@ std::string dropFTSIndexQuery(ClientContext& context, const TableFuncBindData& b
             FTSUtils::getTermsTableName(ftsBindData->tableID, ftsBindData->indexName)));
     // Per-index stopwords copy (the shared default table is never dropped).
     auto indexEntry = catalog->getIndex(transaction, ftsBindData->tableID, ftsBindData->indexName);
+    // An index the extension couldn't use at open is still unloaded, with its options as bytes.
     auto stopWordsTableName =
-        indexEntry->getAuxInfo().cast<FTSIndexAuxInfo>().config.stopWordsTableName;
+        indexEntry->isLoaded() ?
+            indexEntry->getAuxInfo().cast<FTSIndexAuxInfo>().config.stopWordsTableName :
+            FTSIndexAuxInfo::deserialize(indexEntry->getAuxBufferReader())
+                ->config.stopWordsTableName;
     if (stopWordsTableName != FTSUtils::getDefaultStopWordsTableName()) {
         query += std::format("DROP TABLE IF EXISTS {};",
             StringUtils::quoteIdentifier(stopWordsTableName));

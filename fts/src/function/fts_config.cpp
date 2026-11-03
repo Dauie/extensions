@@ -105,6 +105,9 @@ StopWordsTableInfo StopWords::bind(main::ClientContext& context, common::table_i
     if (stopWords == DEFAULT_VALUE) {
         return StopWordsTableInfo{stopWords, FTSUtils::getDefaultStopWordsTableName(),
             StopWordsSource::DEFAULT};
+    } else if (stopWords == NONE_VALUE) {
+        return StopWordsTableInfo{stopWords,
+            FTSUtils::getNonDefaultStopWordsTableName(tableID, indexName), StopWordsSource::NONE};
     } else if (catalog->containsTable(transaction::Transaction::Get(context), stopWords)) {
         auto entry =
             catalog->getTableCatalogEntry(transaction::Transaction::Get(context), stopWords);
@@ -155,6 +158,7 @@ CreateFTSConfig::CreateFTSConfig(main::ClientContext& context, common::table_id_
             tokenizerInfo.tokenizer = common::StringUtils::getLower(value.getValue<std::string>());
             Tokenizer::validate(tokenizerInfo.tokenizer);
         } else if (lowerCaseName == "jieba_dict_dir") {
+            Tokenizer::requireJieba();
             value.validateType(common::LogicalTypeID::STRING);
             // NOTE: dictionary paths are case-sensitive on some filesystems, so the
             // value must be used verbatim (only the parameter *name* is lowercased).
@@ -167,7 +171,8 @@ CreateFTSConfig::CreateFTSConfig(main::ClientContext& context, common::table_id_
 
 FTSConfig CreateFTSConfig::getFTSConfig() const {
     return FTSConfig{stemmer, stopWordsTableInfo.tableName, stopWordsTableInfo.stopWords,
-        ignorePattern, ignorePatternQuery, tokenizerInfo.tokenizer, tokenizerInfo.jiebaDictDir};
+        ignorePattern, ignorePatternQuery, tokenizerInfo.tokenizer, tokenizerInfo.jiebaDictDir,
+        FTSConfig::ANALYSIS_VERSION};
 }
 
 void FTSConfig::serialize(common::Serializer& serializer) const {
@@ -178,6 +183,7 @@ void FTSConfig::serialize(common::Serializer& serializer) const {
     serializer.serializeValue(ignorePatternQuery);
     serializer.serializeValue(tokenizer);
     serializer.serializeValue(jiebaDictDir);
+    serializer.serializeValue(analysisVersion);
 }
 
 FTSConfig FTSConfig::deserialize(common::Deserializer& deserializer) {
@@ -189,6 +195,10 @@ FTSConfig FTSConfig::deserialize(common::Deserializer& deserializer) {
     deserializer.deserializeValue(config.ignorePatternQuery);
     deserializer.deserializeValue(config.tokenizer);
     deserializer.deserializeValue(config.jiebaDictDir);
+    // The version comes last, so an index stored without one ends here.
+    if (!deserializer.finished()) {
+        deserializer.deserializeValue(config.analysisVersion);
+    }
     return config;
 }
 
@@ -215,12 +225,29 @@ void TopK::validate(uint64_t value) {
 }
 
 void Tokenizer::validate(const std::string& tokenizer) {
-    if (tokenizer == "simple" || tokenizer == "jieba") {
+    if (tokenizer == "simple") {
+        return;
+    }
+    if (tokenizer == "jieba") {
+        requireJieba();
         return;
     }
     throw common::BinderException{
-        "Unsupported tokenizer: " + tokenizer +
-        ".\nSupported tokenizers: 'simple' (default), 'jieba' (advanced Chinese)"};
+        std::format("Unsupported tokenizer: {}.\nSupported tokenizers: {}", tokenizer, SUPPORTED)};
+}
+
+void Tokenizer::requireJieba() {
+#ifndef LBUG_FTS_JIEBA
+    throw common::BinderException{NO_JIEBA};
+#endif
+}
+
+bool Tokenizer::isBuilt([[maybe_unused]] const std::string& tokenizer) {
+#ifdef LBUG_FTS_JIEBA
+    return true;
+#else
+    return tokenizer != "jieba";
+#endif
 }
 
 } // namespace fts_extension

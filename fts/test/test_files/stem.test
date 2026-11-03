@@ -30,3 +30,14 @@ kitap
 alic
 bob
 carol
+# The stemmer is created when the function is bound, so it has to be a literal.
+-STATEMENT UNWIND ['english', 'porter'] AS s RETURN STEM('running', s)
+---- error
+Binder exception: The stemmer parameter must be a literal expression.
+-STATEMENT CREATE NODE TABLE lang (name STRING, PRIMARY KEY(name))
+---- ok
+-STATEMENT CREATE (:lang {name: 'english'})
+---- ok
+-STATEMENT MATCH (l:lang) RETURN STEM('running', l.name)
+---- error
+Binder exception: The stemmer parameter must be a literal expression.

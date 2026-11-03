@@ -6,7 +6,9 @@
 #include "common/types/string_t.h"
 #include "common/types/types.h"
 #include "common/vector/value_vector.h"
+#ifdef LBUG_FTS_JIEBA
 #include "cppjieba/Jieba.hpp"
+#endif
 #include "expression_evaluator/expression_evaluator_utils.h"
 #include "function/scalar_function.h"
 #include "re2.h"
@@ -18,6 +20,7 @@ namespace fts_extension {
 using namespace function;
 using namespace common;
 
+#ifdef LBUG_FTS_JIEBA
 struct JiebaBindData final : public FunctionBindData {
     std::shared_ptr<const cppjieba::Jieba> jieba;
 
@@ -32,6 +35,8 @@ struct JiebaBindData final : public FunctionBindData {
     }
 };
 
+#endif
+
 static void addTokensToVector(const std::vector<std::string>& tokens, list_entry_t& result,
     common::ValueVector& resultVector) {
     result = ListVector::addList(&resultVector, tokens.size());
@@ -40,6 +45,7 @@ static void addTokensToVector(const std::vector<std::string>& tokens, list_entry
     }
 }
 
+#ifdef LBUG_FTS_JIEBA
 struct JiebaTokenizer {
     static void operation(string_t& text, string_t& /*tokenizerName*/, string_t& /*extraParam*/,
         list_entry_t& result, common::ValueVector& resultVector, void* dataPtr) {
@@ -49,6 +55,8 @@ struct JiebaTokenizer {
         addTokensToVector(tokens, result, resultVector);
     }
 };
+
+#endif
 
 struct SimpleTokenizer {
     static void operation(string_t& text, string_t& /*tokenizerName*/, string_t& /*extraParam*/,
@@ -70,6 +78,9 @@ static std::unique_ptr<FunctionBindData> bindFunc(const ScalarBindFuncInput& inp
         input.context);
     auto tokenizer = common::StringUtils::getLower(value.getValue<std::string>());
     if (tokenizer == "jieba") {
+#ifndef LBUG_FTS_JIEBA
+        throw BinderException{Tokenizer::NO_JIEBA};
+#else
         std::string dictDir = evaluator::ExpressionEvaluatorUtils::evaluateConstantExpression(
             input.arguments[2], input.context)
                                   .getValue<std::string>();
@@ -79,6 +90,7 @@ static std::unique_ptr<FunctionBindData> bindFunc(const ScalarBindFuncInput& inp
                 JiebaTokenizer>;
         return std::make_unique<JiebaBindData>(
             binder::ExpressionUtil::getDataTypes(input.arguments), std::move(jieba));
+#endif
     } else if (tokenizer == "simple" || tokenizer == "") {
         input.definition->ptrCast<ScalarFunction>()->execFunc =
             ScalarFunction::TernaryRegexExecFunction<string_t, string_t, string_t, list_entry_t,
@@ -87,8 +99,8 @@ static std::unique_ptr<FunctionBindData> bindFunc(const ScalarBindFuncInput& inp
             LogicalType::LIST(LogicalType::STRING()));
     } else {
         throw common::BinderException{
-            "Unsupported tokenizer: " + tokenizer +
-            ".\nSupported tokenizers: 'simple' (default), 'jieba' (advanced Chinese)"};
+            std::format("Unsupported tokenizer: {}.\nSupported tokenizers: {}", tokenizer,
+                Tokenizer::SUPPORTED)};
     }
 }
 

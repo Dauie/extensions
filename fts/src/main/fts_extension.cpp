@@ -19,9 +19,7 @@ using namespace extension;
 
 // An interrupted CREATE/DROP can leave the catalog index entry present while some of
 // its internal tables are missing. Loading such an index throws and would fail the
-// whole database open, so detect the torn state up front and skip the index instead.
-// The database still opens; repair with DROP_FTS_INDEX + CREATE_FTS_INDEX (a plain
-// re-CREATE also works: CREATE self-heals internal-only residue).
+// whole database open, so detect the torn state up front instead.
 static bool ftsInternalTablesComplete(main::ClientContext* context, common::table_id_t tableID,
     const std::string& indexName, const std::string& stopWordsTableName) {
     auto catalog = catalog::Catalog::Get(*context);
@@ -32,22 +30,47 @@ static bool ftsInternalTablesComplete(main::ClientContext* context, common::tabl
            catalog->containsTable(transaction, FTSUtils::getAppearsInTableName(tableID, indexName));
 }
 
+// Whether the extension can use the index. One it can't is left unloaded, so the database
+// still opens: inserts into and deletes from its table, and sets of its indexed properties, are
+// refused at bind, queries are refused, and dropping the index and creating it again recovers
+// it.
+static bool isUsable(main::ClientContext* context, const catalog::IndexCatalogEntry& indexEntry,
+    const FTSConfig& config, bool hasIndex) {
+    // A crash after CREATE_FTS_INDEX committed but before its checkpoint finished leaves the
+    // entry with no index: WAL replay restores the entry but not the index, so nothing
+    // maintains it.
+    if (!hasIndex) {
+        return false;
+    }
+    // An index built by another version of the analysis holds terms this build wouldn't
+    // produce, so deleting or updating its documents would fail.
+    if (config.analysisVersion != FTSConfig::ANALYSIS_VERSION) {
+        return false;
+    }
+    // An index whose tokenizer this build leaves out couldn't be maintained: replaying or
+    // making a write would fail.
+    if (!Tokenizer::isBuilt(config.tokenizer)) {
+        return false;
+    }
+    return ftsInternalTablesComplete(context, indexEntry.getTableID(), indexEntry.getIndexName(),
+        config.stopWordsTableName);
+}
+
 static void initFTSEntries(main::ClientContext* context, catalog::Catalog& catalog) {
     auto storageManager = storage::StorageManager::Get(*context);
     for (auto& indexEntry : catalog.getIndexEntries(transaction::Transaction::Get(*context))) {
         if (indexEntry->getIndexType() == FTSIndexCatalogEntry::TYPE_NAME &&
             !indexEntry->isLoaded()) {
-            indexEntry->setAuxInfo(FTSIndexAuxInfo::deserialize(indexEntry->getAuxBufferReader()));
-            auto& auxConfig = indexEntry->getAuxInfo().cast<FTSIndexAuxInfo>().config;
-            if (!ftsInternalTablesComplete(context, indexEntry->getTableID(),
-                    indexEntry->getIndexName(), auxConfig.stopWordsTableName)) {
-                continue;
-            }
             auto& nodeTable =
                 storageManager->getTable(indexEntry->getTableID())->cast<storage::NodeTable>();
             auto optionalIndex = nodeTable.getIndexHolder(indexEntry->getIndexName());
-            ASSERT(optionalIndex.has_value() && !optionalIndex.value().get().isLoaded());
+            auto auxInfo = FTSIndexAuxInfo::deserialize(indexEntry->getAuxBufferReader());
+            if (!isUsable(context, *indexEntry, auxInfo->config, optionalIndex.has_value())) {
+                continue;
+            }
+            indexEntry->setAuxInfo(std::move(auxInfo));
             auto& unloadedIndex = optionalIndex.value().get();
+            ASSERT(!unloadedIndex.isLoaded());
             unloadedIndex.load(context, storageManager);
         }
     }
