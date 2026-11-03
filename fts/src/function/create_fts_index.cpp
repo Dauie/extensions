@@ -6,6 +6,7 @@
 #include "catalog/catalog_entry/node_table_catalog_entry.h"
 #include "catalog/catalog_entry/rel_group_catalog_entry.h"
 #include "catalog/fts_index_catalog_entry.h"
+#include "common/constants.h"
 #include "common/exception/binder.h"
 #include "common/string_utils.h"
 #include "common/types/value/nested.h"
@@ -125,7 +126,10 @@ static bool isResidueAppearsInTable(catalog::Catalog* catalog,
             return false;
         }
     }
-    return hasExactProperties(*entry, {{"tf", common::LogicalTypeID::UINT64}});
+    // Every rel table also has the internal ID property.
+    return hasExactProperties(*entry,
+        {{common::InternalKeyword::ID, common::LogicalTypeID::INTERNAL_ID},
+            {"tf", common::LogicalTypeID::UINT64}});
 }
 
 static std::string dropResidueStatements(ClientContext& context, table_id_t tableID,
